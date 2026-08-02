@@ -59,14 +59,23 @@
   CATEGORIES.forEach(c => QUESTIONNAIRES[c.id] = commonSections(c.id));
 
   // ---- NOMINEE MASTER (SOW §3.1.1 / §3.1.2 — GSTIN authorised list) --------
+  // NOMINEE_MASTER[0] is the "currently logged-in" nominee for the Nominee role.
   const NOMINEE_MASTER = [
     { gstin: "07AABCU9603R1ZM", name: "Aarav Diagnostics Pvt Ltd", entity: "Private Limited", email: "contact@aaravdiag.example", uid: "QCI-N-1001", registered: true },
     { gstin: "27AAECS1234F1Z5", name: "Sundaram Test Labs LLP", entity: "LLP", email: "labs@sundaram.example", uid: "QCI-N-1002", registered: true },
     { gstin: "29AAGCB8901H1ZP", name: "Bhaskar Healthcare Trust", entity: "Society/Trust", email: "admin@bhaskarhc.example", uid: "QCI-N-1003", registered: true },
+    { gstin: "19AACCM2345Q1Z8", name: "Meghna Medical College", entity: "Society/Trust", email: "reg@meghnamed.example", uid: "QCI-N-1008", registered: true },
+    { gstin: "36AADCK6789R1Z4", name: "Konark Calibration Services", entity: "Private Limited", email: "info@konarkcal.example", uid: "QCI-N-1009", registered: true },
+    { gstin: "08AAECR3456T1Z7", name: "Rajputana Skill Institute", entity: "LLP", email: "admin@rajskill.example", uid: "QCI-N-1010", registered: true },
+    { gstin: "23AAFCV8765W1Z1", name: "Vindhya Certification Pvt Ltd", entity: "Private Limited", email: "cert@vindhya.example", uid: "QCI-N-1011", registered: true },
+    { gstin: "32AAGCT1237Y1Z6", name: "Travancore Analytical Labs", entity: "Private Limited", email: "labs@travanalytics.example", uid: "QCI-N-1012", registered: true },
+    { gstin: "21AAHCS4568U1Z0", name: "Sahyadri Health Foundation", entity: "Society/Trust", email: "office@sahyadrihf.example", uid: "QCI-N-1013", registered: true },
+    { gstin: "10AAICN7890P1Z2", name: "Nalanda Quality Council", entity: "Partnership", email: "contact@nalandaqc.example", uid: "QCI-N-1014", registered: true },
     { gstin: "09AAACD5678K1Z2", name: "Deccan Skills Academy", entity: "Private Limited", email: "info@deccanskills.example", uid: "QCI-N-1004", registered: false },
     { gstin: "24AAFCM4321L1Z9", name: "Meridian Certification Co", entity: "Private Limited", email: "cert@meridian.example", uid: "QCI-N-1005", registered: false },
     { gstin: "33AABCP7654N1Z3", name: "Pallava Quality Systems", entity: "Partnership", email: "quality@pallava.example", uid: "QCI-N-1006", registered: false }
   ];
+  const CURRENT_NOMINEE = NOMINEE_MASTER[0].gstin;   // the nominee "logged in" for the Nominee role
 
   // ---- INTERNAL USERS (for QC assignment — SOW §3.2.3) ---------------------
   const USERS = [
@@ -110,72 +119,117 @@
     COMPLETED:      { label: { en: "Evaluation complete", hi: "मूल्यांकन पूर्ण" }, badge: "b-green" }
   };
 
-  // ---- SEED APPLICATIONS (one per workflow state for demonstration) -------
-  function ans(cat, over) {
-    const base = {
-      org_name: NOMINEE_MASTER[0].name, org_type: "Private Limited", years_op: 12,
-      reg_cert: "registration.pdf", scope: "Mechanical & thermal testing per ISO/IEC 17025.",
-      qual_staff: 18, quality_manual: "Yes — fully", prev_audit: "12-Mar-2026",
-      evidence: "audit-evidence.pdf", conflict: "No", past_susp: "No", declaration: true
+  // ---- SEED APPLICATIONS (generated — rich data for every role/view) -------
+  const CAT_SCOPE = {
+    NABL: "Mechanical, thermal & electrical testing per ISO/IEC 17025.",
+    NABH: "Multi-specialty hospital accreditation programme.",
+    NABET: "Vocational training organisation & skill assessment accreditation.",
+    NABCB: "Management systems certification body (ISO 9001 / 14001 / 45001).",
+    NBQP: "Quality promotion & statistical quality tools programme."
+  };
+  const QMAN = ["Yes — fully", "Partially", "Yes — fully", "Yes — fully"];
+
+  function buildAns(nom, catId, i) {
+    return {
+      org_name: nom.name, org_type: nom.entity, years_op: 6 + (i % 18),
+      reg_cert: "registration.pdf", scope: CAT_SCOPE[catId],
+      qual_staff: 8 + (i * 3) % 40, quality_manual: QMAN[i % QMAN.length],
+      prev_audit: (10 + (i % 18)) + "-Mar-2026", evidence: "audit-evidence.pdf",
+      conflict: "No", past_susp: i % 7 === 0 ? "Yes" : "No", declaration: true
     };
-    return Object.assign(base, over || {});
   }
-  function mkApp(o) {
-    return Object.assign({
-      round: "A", answers: {}, qc: {}, flags: [], assignedTo: null,
-      scoreA: null, scoreB: null, cycles: 0, history: [], createdAt: "01-Aug-2026"
-    }, o);
+  const QIDS = ["years_op", "scope", "qual_staff", "quality_manual", "prev_audit", "conflict", "past_susp"];
+  function qcAll(mod) {
+    const o = {}; QIDS.forEach(id => o[id] = { d: "approve" });
+    if (mod) o.quality_manual = { d: "reject", comment: "ISO clause 7.2 not fully evidenced — please update.", modified: true, updates: 1 };
+    return o;
+  }
+  function qcPartial() { return { years_op: { d: "approve" }, scope: { d: "approve" }, qual_staff: { d: "approve" } }; }
+
+  const STEP = {
+    created: n => ({ by: "Nominee", act: "Application draft created" }),
+    submitted: n => ({ by: "Nominee", act: "Submitted — routed to Admin queue" }),
+    assigned: r => ({ by: "QCI Admin", act: "Assigned to QC Reviewer " + r }),
+    qcdraft: n => ({ by: "QC Reviewer", act: "Saved review draft" }),
+    qcsub: m => ({ by: "QC Reviewer", act: "QC form submitted" + (m ? " — 1 parameter modified" : "") }),
+    returned: n => ({ by: "QCI Admin", act: "Returned to QC — 2 parameter(s) flagged" }),
+    adminok: n => ({ by: "QCI Admin", act: "Approved — routed to Super Admin" }),
+    sareject: n => ({ by: "Super Admin", act: "Rejected — returned to Admin: clarification needed on scope" }),
+    saok: n => ({ by: "Super Admin", act: "Approved — ready to score" }),
+    scoreA: v => ({ by: "Super Admin", act: "Round A (Desktop) scored: " + v }),
+    scoreB: v => ({ by: "Super Admin", act: "Round B (Field) scored: " + v + " — evaluation complete" })
+  };
+  function hist(status, revName, mod, sA, sB) {
+    const h = []; let d = 8;
+    const push = s => h.push(Object.assign({ ts: (d++) + "-Jul-2026" }, s));
+    push(STEP.created()); if (status === "DRAFT") return h;
+    push(STEP.submitted()); if (status === "SUBMITTED") return h;
+    push(STEP.assigned(revName)); if (status === "ASSIGNED") return h;
+    if (status === "QC_DRAFT") { push(STEP.qcdraft()); return h; }
+    if (status === "RETURNED_QC") { push(STEP.qcsub(mod)); push(STEP.returned()); return h; }
+    push(STEP.qcsub(mod)); if (status === "QC_SUBMITTED") return h;
+    push(STEP.adminok()); if (status === "ADMIN_APPROVED") return h;
+    if (status === "SA_REJECTED") { push(STEP.sareject()); return h; }
+    push(STEP.saok()); if (status === "SA_APPROVED") return h;
+    push(STEP.scoreA(sA)); if (status === "SCORED_A") return h;
+    push(STEP.scoreB(sB)); return h;
   }
 
-  const APPLICATIONS = [
-    mkApp({ id: "a1", appNo: "IAMEP/2026/000101", catId: "NABL", status: "DRAFT",
-      nominee: NOMINEE_MASTER[0], answers: ans("NABL", { qual_staff: 18 }),
-      history: [{ ts: "01-Aug-2026 10:12", by: "Nominee", act: "Application draft created" }] }),
-
-    mkApp({ id: "a2", appNo: "IAMEP/2026/000102", catId: "NABH", status: "SUBMITTED",
-      nominee: NOMINEE_MASTER[2], answers: ans("NABH", { org_name: NOMINEE_MASTER[2].name, org_type: "Society/Trust", scope: "Hospital accreditation — 220 beds, multi-specialty.", qual_staff: 42 }),
-      history: [{ ts: "01-Aug-2026 11:40", by: "Nominee", act: "Submitted — routed to Admin queue" }] }),
-
-    mkApp({ id: "a3", appNo: "IAMEP/2026/000103", catId: "NABL", status: "ASSIGNED", assignedTo: "qc2",
-      nominee: NOMINEE_MASTER[1], answers: ans("NABL", { org_name: NOMINEE_MASTER[1].name, org_type: "LLP", qual_staff: 9 }),
-      history: [{ ts: "31-Jul-2026 09:00", by: "Nominee", act: "Submitted" }, { ts: "31-Jul-2026 14:20", by: "QCI Admin", act: "Assigned to QC Reviewer S. Iyer" }] }),
-
-    mkApp({ id: "a4", appNo: "IAMEP/2026/000104", catId: "NABET", status: "QC_SUBMITTED", assignedTo: "qc1",
-      nominee: NOMINEE_MASTER[3], answers: ans("NABET", { org_name: NOMINEE_MASTER[3].name, scope: "Vocational training organisation accreditation.", qual_staff: 14, quality_manual: "Partially" }),
-      qc: { years_op: { d: "approve" }, scope: { d: "approve" }, qual_staff: { d: "approve" },
-            quality_manual: { d: "reject", comment: "ISO clause 7.2 not evidenced — please update.", modified: true, updates: 1 },
-            prev_audit: { d: "approve" }, conflict: { d: "approve" }, past_susp: { d: "approve" } },
-      history: [{ ts: "30-Jul-2026 09:00", by: "Nominee", act: "Submitted" }, { ts: "30-Jul-2026 12:00", by: "QCI Admin", act: "Assigned to R. Menon" }, { ts: "01-Aug-2026 16:30", by: "QC Reviewer", act: "QC form submitted — 1 parameter modified" }] }),
-
-    mkApp({ id: "a5", appNo: "IAMEP/2026/000105", catId: "NABCB", status: "ADMIN_APPROVED", assignedTo: "qc3",
-      nominee: NOMINEE_MASTER[4], answers: ans("NABCB", { org_name: NOMINEE_MASTER[4].name, scope: "Management systems certification body.", qual_staff: 26 }),
-      qc: { years_op: { d: "approve" }, scope: { d: "approve" }, qual_staff: { d: "approve" }, quality_manual: { d: "approve" }, prev_audit: { d: "approve" }, conflict: { d: "approve" }, past_susp: { d: "approve" } },
-      history: [{ ts: "28-Jul-2026", by: "Nominee", act: "Submitted" }, { ts: "29-Jul-2026", by: "QC Reviewer", act: "QC submitted" }, { ts: "31-Jul-2026", by: "QCI Admin", act: "Approved — routed to Super Admin" }] }),
-
-    mkApp({ id: "a6", appNo: "IAMEP/2026/000106", catId: "NBQP", status: "SA_APPROVED", assignedTo: "qc1", round: "A",
-      nominee: NOMINEE_MASTER[5], answers: ans("NBQP", { org_name: NOMINEE_MASTER[5].name, org_type: "Partnership", scope: "Quality promotion & statistical tools programme.", qual_staff: 11 }),
-      qc: { years_op: { d: "approve" }, scope: { d: "approve" }, qual_staff: { d: "approve" }, quality_manual: { d: "approve" }, prev_audit: { d: "approve" }, conflict: { d: "approve" }, past_susp: { d: "approve" } },
-      history: [{ ts: "25-Jul-2026", by: "Nominee", act: "Submitted" }, { ts: "26-Jul-2026", by: "QC Reviewer", act: "QC submitted" }, { ts: "27-Jul-2026", by: "QCI Admin", act: "Approved" }, { ts: "28-Jul-2026", by: "Super Admin", act: "Approved — ready to score" }] }),
-
-    mkApp({ id: "a7", appNo: "IAMEP/2026/000107", catId: "NABL", status: "COMPLETED", assignedTo: "qc2", round: "B",
-      nominee: { gstin: "07AAAAA0000A1Z1", name: "Vega Metrology Labs", entity: "Private Limited", email: "vega@example", uid: "QCI-N-1007" },
-      answers: ans("NABL", { org_name: "Vega Metrology Labs", scope: "Dimensional & electrical calibration.", qual_staff: 31 }),
-      qc: { years_op: { d: "approve" }, scope: { d: "approve" }, qual_staff: { d: "approve" }, quality_manual: { d: "approve" }, prev_audit: { d: "approve" }, conflict: { d: "approve" }, past_susp: { d: "approve" } },
-      scoreA: 82.5, scoreB: 88.0,
-      history: [{ ts: "10-Jul-2026", by: "Nominee", act: "Submitted" }, { ts: "12-Jul-2026", by: "QC Reviewer", act: "QC submitted" }, { ts: "14-Jul-2026", by: "QCI Admin", act: "Approved" }, { ts: "15-Jul-2026", by: "Super Admin", act: "Approved" }, { ts: "18-Jul-2026", by: "Super Admin", act: "Round A (Desktop) scored: 82.5" }, { ts: "28-Jul-2026", by: "Super Admin", act: "Round B (Field) scored: 88.0 — evaluation complete" }] })
+  const REV = { qc1: "R. Menon", qc2: "S. Iyer", qc3: "P. Bhatt" };
+  // spec rows: [status, categoryIndex, nomineeIndex, assignedTo, scoreA, scoreB]
+  const SPEC = [
+    // ---- current nominee (index 0) — several of their own applications ----
+    ["DRAFT", 0, 0], ["SUBMITTED", 2, 0], ["QC_SUBMITTED", 1, 0, "qc1"],
+    ["SA_APPROVED", 4, 0, "qc2"], ["COMPLETED", 0, 0, "qc3", 84.5, 90.0],
+    // ---- other nominees across every state ----
+    ["DRAFT", 3, 3], ["DRAFT", 1, 8],
+    ["SUBMITTED", 0, 4], ["SUBMITTED", 3, 5], ["SUBMITTED", 2, 9],
+    ["ASSIGNED", 0, 1, "qc2"], ["ASSIGNED", 3, 6, "qc1"],
+    ["QC_DRAFT", 2, 3, "qc3"], ["QC_DRAFT", 4, 7, "qc2"],
+    ["RETURNED_QC", 1, 5, "qc1", null, null], ["RETURNED_QC", 0, 8, "qc3"],
+    ["QC_SUBMITTED", 2, 2, "qc1"], ["QC_SUBMITTED", 3, 6, "qc2"],
+    ["ADMIN_APPROVED", 4, 4, "qc3"], ["ADMIN_APPROVED", 1, 7, "qc1"],
+    ["SA_REJECTED", 3, 9, "qc2"],
+    ["SA_APPROVED", 0, 1, "qc1"],
+    ["SCORED_A", 4, 2, "qc3", 78.0], ["SCORED_A", 2, 6, "qc2", 81.5],
+    ["COMPLETED", 3, 4, "qc1", 88.0, 79.5], ["COMPLETED", 1, 7, "qc2", 73.0, 82.0], ["COMPLETED", 4, 9, "qc3", 91.0, 86.5]
   ];
+
+  const APPLICATIONS = SPEC.map((row, i) => {
+    const [status, catIdx, nomIdx, assignedTo, sA, sB] = row;
+    const catId = CATEGORIES[catIdx].id, nom = NOMINEE_MASTER[nomIdx];
+    const mod = i % 4 === 0;
+    const post = ["QC_SUBMITTED", "RETURNED_QC", "ADMIN_APPROVED", "SA_REJECTED", "SA_APPROVED", "SCORED_A", "COMPLETED"];
+    let qc = {};
+    if (status === "QC_DRAFT") qc = qcPartial();
+    else if (post.includes(status)) qc = qcAll(mod);
+    const flags = status === "RETURNED_QC" ? ["scope", "qual_staff"] : [];
+    const round = ["SCORED_A", "COMPLETED"].includes(status) ? "B" : "A";
+    return {
+      id: "a" + (i + 1), appNo: "IAMEP/2026/" + String(101 + i).padStart(6, "0"),
+      catId, status, nominee: nom, assignedTo: assignedTo || null,
+      answers: buildAns(nom, catId, i), qc, flags, round,
+      scoreA: sA != null ? sA : null, scoreB: sB != null ? sB : null,
+      cycles: post.includes(status) ? 1 + (i % 3) : 0,
+      history: hist(status, REV[assignedTo] || "R. Menon", mod, sA, sB),
+      createdAt: (8 + (i % 18)) + "-Jul-2026"
+    };
+  });
 
   // ---- AUDIT TRAIL (SOW §1.6 — append-only) --------------------------------
   const AUDIT = [
-    { ts: "01-Aug-2026 16:30", actor: "R. Menon", role: "QC Reviewer", action: "QC_SUBMIT", entity: "IAMEP/2026/000104", detail: "1 parameter rejected & modified" },
-    { ts: "01-Aug-2026 11:40", actor: "Bhaskar Healthcare Trust", role: "Nominee", action: "APP_SUBMIT", entity: "IAMEP/2026/000102", detail: "Category NABH" },
-    { ts: "31-Jul-2026 14:20", actor: "K. Rao", role: "QCI Admin", action: "ASSIGN_QC", entity: "IAMEP/2026/000103", detail: "Assigned to S. Iyer" },
-    { ts: "28-Jul-2026 09:15", actor: "V. Sharma", role: "Super Admin", action: "SCORE_B", entity: "IAMEP/2026/000107", detail: "Round B = 88.0" },
-    { ts: "24-Jul-2026 10:00", actor: "V. Sharma", role: "Super Admin", action: "MASTER_UPLOAD", detail: "Nominee master Excel uploaded — 6 GSTINs" }
+    { ts: "02-Aug-2026 09:40", actor: "V. Sharma", role: "Super Admin", action: "SCORE_B", entity: "IAMEP/2026/000126", detail: "Round B = 86.5 — evaluation complete" },
+    { ts: "01-Aug-2026 17:05", actor: "P. Bhatt", role: "QC Reviewer", action: "QC_SUBMIT", entity: "IAMEP/2026/000103", detail: "1 parameter rejected & modified" },
+    { ts: "01-Aug-2026 16:30", actor: "R. Menon", role: "QC Reviewer", action: "QC_SUBMIT", entity: "IAMEP/2026/000118", detail: "QC form submitted" },
+    { ts: "01-Aug-2026 12:10", actor: "K. Rao", role: "QCI Admin", action: "ADMIN_RETURN", entity: "IAMEP/2026/000116", detail: "2 parameters flagged, reassigned" },
+    { ts: "01-Aug-2026 11:40", actor: "Aarav Diagnostics Pvt Ltd", role: "Nominee", action: "APP_SUBMIT", entity: "IAMEP/2026/000102", detail: "Category NABH" },
+    { ts: "31-Jul-2026 14:20", actor: "K. Rao", role: "QCI Admin", action: "ASSIGN_QC", entity: "IAMEP/2026/000111", detail: "Assigned to S. Iyer" },
+    { ts: "30-Jul-2026 10:15", actor: "V. Sharma", role: "Super Admin", action: "SA_REJECT", entity: "IAMEP/2026/000120", detail: "Returned to Admin" },
+    { ts: "24-Jul-2026 10:00", actor: "V. Sharma", role: "Super Admin", action: "MASTER_UPLOAD", detail: "Nominee master Excel uploaded — 13 GSTINs" }
   ];
 
   // ---- PERSISTENCE ---------------------------------------------------------
-  const KEY = "iamep_state_v1";
+  const KEY = "iamep_state_v2";   // bumped — returning visitors get the richer seed
   const DEFAULT = { applications: APPLICATIONS, master: NOMINEE_MASTER, users: USERS, audit: AUDIT, config: CONFIG, lang: "en" };
 
   function load() {
@@ -189,7 +243,7 @@
   function reset() { localStorage.removeItem(KEY); }
 
   window.IAMEP = {
-    ROLES, CATEGORIES, QUESTIONNAIRES, NOTICES, STATUS, DEFAULT,
+    ROLES, CATEGORIES, QUESTIONNAIRES, NOTICES, STATUS, DEFAULT, CURRENT_NOMINEE,
     load, save, reset,
     catName: id => (CATEGORIES.find(c => c.id === id) || {}).name || { en: id, hi: id },
     catDot: id => (CATEGORIES.find(c => c.id === id) || {}).dot || "#1B84FF"

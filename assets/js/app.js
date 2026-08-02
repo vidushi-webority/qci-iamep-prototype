@@ -52,6 +52,8 @@
   const st = k => API.STATUS[k] || { label: { en: k }, badge: "b-grey" };
   const apps = () => S.applications;
   const app = id => apps().find(a => a.id === id);
+  const CUR = API.CURRENT_NOMINEE;                                  // logged-in nominee
+  const myApps = () => apps().filter(a => a.nominee.gstin === CUR); // nominee sees only their own (SOW §3.3 RBAC)
   const uid = () => "a" + Math.random().toString(36).slice(2, 7);
 
   function audit(action, entity, detail) {
@@ -232,12 +234,12 @@
     const A = apps();
     let cards = "", body = "";
     if (ROLE === "nominee") {
-      const mine = A;
+      const mine = myApps();
       cards = counter(mine.length, { en: "My Applications", hi: "मेरे आवेदन" }, "qms")
         + counter(mine.filter(a => a.status === "DRAFT").length, { en: "Drafts", hi: "प्रारूप" }, "enms")
         + counter(mine.filter(a => !["DRAFT", "COMPLETED", "SA_REJECTED"].includes(a.status)).length, { en: "In Process", hi: "प्रक्रियाधीन" }, "ems")
         + counter(mine.filter(a => a.status === "COMPLETED").length, { en: "Completed", hi: "पूर्ण" }, "fsms");
-      body = tableShell(APPHEAD, A.map(a => appRow(a, a.status === "DRAFT"
+      body = tableShell(APPHEAD, mine.map(a => appRow(a, a.status === "DRAFT"
         ? `<button class="btn sm" data-edit="${a.id}">${ico("edit", "sm")}${t({ en: "Continue", hi: "जारी" })}</button>`
         : `<button class="btn sm" data-app="${a.id}">${ico("eye", "sm")}${t({ en: "Track", hi: "ट्रैक" })}</button>`)).join(""));
     } else if (ROLE === "qc") {
@@ -297,7 +299,7 @@
   function vMyApps() {
     $("#view").innerHTML = page({ en: "My Applications", hi: "मेरे आवेदन" }, { en: "Track every application and download the generated PDF copy.", hi: "प्रत्येक आवेदन ट्रैक करें और जनित PDF प्रति डाउनलोड करें।" },
       `<button class="btn primary" id="newBtn">${ico("plus")}${t({ en: "New Application", hi: "नया आवेदन" })}</button>`)
-      + tableShell(APPHEAD, apps().map(a => appRow(a,
+      + tableShell(APPHEAD, myApps().map(a => appRow(a,
         (a.status === "DRAFT" ? `<button class="btn sm" data-edit="${a.id}">${ico("edit", "sm")}${t({ en: "Continue", hi: "जारी" })}</button>` :
           `<button class="btn sm" data-app="${a.id}">${ico("eye", "sm")}${t({ en: "Track", hi: "ट्रैक" })}</button>
            <button class="btn sm" data-pdf="${a.id}">${ico("download", "sm")}PDF</button>`))).join(""));
@@ -307,7 +309,7 @@
     el("newBtn").onclick = () => go("new");
   }
   function vDrafts() {
-    const d = apps().filter(a => a.status === "DRAFT");
+    const d = myApps().filter(a => a.status === "DRAFT");
     $("#view").innerHTML = page({ en: "Drafts", hi: "प्रारूप" }, { en: "Drafts are kept separately per category — you can work on several category applications in parallel (SOW §3.2.2).", hi: "प्रत्येक श्रेणी हेतु अलग प्रारूप (SOW §3.2.2)।" })
       + tableShell([APPHEAD[0], APPHEAD[1], APPHEAD[3], { en: "Actions", hi: "क्रिया" }],
         d.map(a => `<tr><td>${esc(a.appNo)}</td><td>${catTag(a.catId)}</td><td>${badge(a.status)}</td>
