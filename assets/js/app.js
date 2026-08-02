@@ -746,6 +746,23 @@
       + `<div class="card"><div class="cb">${S.audit.map(auditRow).join("")}</div></div>`;
   }
 
+  // Exports (SOW §3.2.14 — download responses/rankings in PDF + Excel; media as redirect URLs)
+  function vExports() {
+    const opts = [
+      ["all", { en: "All application responses", hi: "सभी आवेदन उत्तर" }, { en: "Complete responses for every application, with media referenced as redirect URLs.", hi: "सभी आवेदनों के पूर्ण उत्तर।" }, "xlsx", "iamep-all-responses.xlsx"],
+      ["rank", { en: "Rankings & final scores", hi: "रैंकिंग एवं अंतिम स्कोर" }, { en: "Ranked list with Round A, Round B and final weighted scores.", hi: "राउंड ए/बी एवं अंतिम स्कोर सहित रैंकिंग।" }, "xlsx", "iamep-rankings.xlsx"],
+      ["mis", { en: "MIS summary (status-wise)", hi: "एमआईएस सारांश" }, { en: "Category × status counts for management reporting.", hi: "प्रबंधन रिपोर्टिंग हेतु श्रेणी × स्थिति।" }, "pdf", "iamep-mis-summary.pdf"]
+    ];
+    $("#view").innerHTML = page({ en: "Exports", hi: "निर्यात" }, { en: "Download application responses and reports in PDF and Excel (SOW §3.2.14). File formats: " + S.config.fileFormats + ".", hi: "PDF एवं एक्सेल में निर्यात (SOW §3.2.14)।" })
+      + `<div class="grid g-3">${opts.map(o => `<div class="card"><div class="cb">
+        <div class="kpi" style="border:none;box-shadow:none;padding:0"><div class="ico" style="background:var(--primary-10);color:var(--primary)">${ico(o[3] === "xlsx" ? "chart" : "doc")}</div>
+        <div><b>${esc(t(o[1]))}</b></div></div>
+        <p class="muted mt8" style="font-size:12.5px">${esc(t(o[2]))}</p>
+        <button class="btn ${o[3] === "xlsx" ? "success" : "primary"} sm mt16" data-ex="${o[0]}" data-kind="${o[3]}" data-file="${o[4]}">${ico("download", "sm")}${o[3].toUpperCase()}</button>
+      </div></div>`).join("")}</div>`;
+    $("#view").querySelectorAll("[data-ex]").forEach(b => b.onclick = () => fakeDownload(b.dataset.file, b.dataset.kind));
+  }
+
   function vSettings() {
     $("#view").innerHTML = page({ en: "Round Settings", hi: "राउंड सेटिंग" }, { en: "Configure round weightage and cycle limits. Round weightage is decided with the Authority (SOW §3.2.13).", hi: "राउंड भारांक एवं चक्र सीमा (SOW §3.2.13)।" })
       + `<div class="card"><div class="cb">
